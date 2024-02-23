@@ -14,7 +14,9 @@ public class ClientManager implements Runnable {
     private String name;
     public static ArrayList<ClientManager> clients = new ArrayList<>();
     private boolean privateMassageStatus;
+    private boolean isPrivateMassageErr;
     private ClientManager destinationClient;
+    private ClientManager srcClient;
 
     public ClientManager(Socket socket) {
         try {
@@ -70,15 +72,18 @@ public class ClientManager implements Runnable {
     private void broadcastMessage(String message, boolean privateMassageStatus) {
 
         if (privateMassageStatus){
-            try {
 
-                if (destinationClient.equals(this)) {
-                    message = "Системное сообщение: извините мы не нашли адресата и не смогли доставить ваше сообщения";
+            try {
+                if (isPrivateMassageErr){
+                    srcClient.bufferedWriter.write(message);
+                    srcClient.bufferedWriter.newLine();
+                    srcClient.bufferedWriter.flush();
+                    isPrivateMassageErr = false;
+                }else {
+                    destinationClient.bufferedWriter.write(message);
+                    destinationClient.bufferedWriter.newLine();
+                    destinationClient.bufferedWriter.flush();
                 }
-                destinationClient.bufferedWriter.write(message);
-                destinationClient.bufferedWriter.newLine();
-                destinationClient.bufferedWriter.flush();
-                privateMassageStatus = false;
             } catch (Exception e) {
                 closeEverything(socket, bufferedReader, bufferedWriter);
             }
@@ -90,8 +95,9 @@ public class ClientManager implements Runnable {
                         client.bufferedWriter.write(message);
                         client.bufferedWriter.newLine();
                         client.bufferedWriter.flush();
+
                     }
-                    privateMassageStatus = false;
+
                 } catch (Exception e) {
                     closeEverything(socket, bufferedReader, bufferedWriter);
                 }
@@ -101,16 +107,25 @@ public class ClientManager implements Runnable {
 
     private String privateMassage(String massage){
         String temp = massage.substring(massage.indexOf("@")+1);
-
         String[] destination = temp.split(" ");
+        String[] src = massage.split(":");
+        clients.stream()
+                .filter(clientManager -> clientManager.name.equals(src[0]))
+                .forEach(clientManager -> srcClient = clientManager);
+        privateMassageStatus = true;
         if (clients.stream().anyMatch(clientManager -> clientManager.name.equals(destination[0]))){
-            privateMassageStatus = true;
             clients.stream()
                     .filter(clientManager -> clientManager.name.equals(destination[0]))
                     .forEach(clientManager -> destinationClient = clientManager);
+
+            temp = massage.replace(": @", " [private]:");
+            return temp.replace(destination[0], "");
+        }else {
+            isPrivateMassageErr = true;
+            return "Системное сообщение: извините мы не нашли адресата и не смогли доставить ваше сообщения";
         }
-        temp = massage.replace(": @", " [private]:");
-        return temp.replace(destination[0], "");
+
+
     }
 
     @Override
@@ -119,6 +134,7 @@ public class ClientManager implements Runnable {
         while (!socket.isClosed()) {
             try {
                 // Чтение данных
+                privateMassageStatus = false;
                 massageFromClient = bufferedReader.readLine();
                 if (massageFromClient.contains(": @")){
                     massageFromClient = privateMassage(massageFromClient);
