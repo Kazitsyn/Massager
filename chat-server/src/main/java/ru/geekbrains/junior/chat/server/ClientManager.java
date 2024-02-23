@@ -3,8 +3,6 @@ package ru.geekbrains.junior.chat.server;
 import java.io.*;
 import java.net.Socket;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Objects;
 
 public class ClientManager implements Runnable {
 
@@ -13,7 +11,6 @@ public class ClientManager implements Runnable {
     private BufferedWriter bufferedWriter;
     private String name;
     public static ArrayList<ClientManager> clients = new ArrayList<>();
-    private boolean privateMassageStatus;
     private boolean isPrivateMassageErr;
     private ClientManager destinationClient;
     private ClientManager srcClient;
@@ -27,7 +24,7 @@ public class ClientManager implements Runnable {
             //TODO: ...
             name = bufferedReader.readLine();
             System.out.println(name + " подключился к чату.");
-            broadcastMessage("Server: " + name + " подключился к чату.", privateMassageStatus);
+            broadcastMessage("Server: " + name + " подключился к чату.");
         }
         catch (Exception e){
             closeEverything(socket, bufferedReader, bufferedWriter);
@@ -61,7 +58,7 @@ public class ClientManager implements Runnable {
     private void removeClient() {
         clients.remove(this);
         System.out.println(name + " покинул чат.");
-        broadcastMessage("Server: " + name + " покинул чат.", privateMassageStatus);
+        broadcastMessage("Server: " + name + " покинул чат.");
     }
 
     /**
@@ -69,25 +66,7 @@ public class ClientManager implements Runnable {
      *
      * @param message сообщение
      */
-    private void broadcastMessage(String message, boolean privateMassageStatus) {
-
-        if (privateMassageStatus){
-
-            try {
-                if (isPrivateMassageErr){
-                    srcClient.bufferedWriter.write(message);
-                    srcClient.bufferedWriter.newLine();
-                    srcClient.bufferedWriter.flush();
-                    isPrivateMassageErr = false;
-                }else {
-                    destinationClient.bufferedWriter.write(message);
-                    destinationClient.bufferedWriter.newLine();
-                    destinationClient.bufferedWriter.flush();
-                }
-            } catch (Exception e) {
-                closeEverything(socket, bufferedReader, bufferedWriter);
-            }
-        }else {
+    private void broadcastMessage(String message) {
             for (ClientManager client : clients) {
                 try {
 
@@ -102,9 +81,35 @@ public class ClientManager implements Runnable {
                     closeEverything(socket, bufferedReader, bufferedWriter);
                 }
             }
+    }
+
+    /**
+     * Отправка сообщения одному слушателю
+     * @param message
+     */
+    private void unicastMessage(String message){
+        try {
+            if (isPrivateMassageErr){
+                srcClient.bufferedWriter.write(message);
+                srcClient.bufferedWriter.newLine();
+                srcClient.bufferedWriter.flush();
+                isPrivateMassageErr = false;
+            }else {
+                destinationClient.bufferedWriter.write(message);
+                destinationClient.bufferedWriter.newLine();
+                destinationClient.bufferedWriter.flush();
+            }
+        } catch (Exception e) {
+            closeEverything(socket, bufferedReader, bufferedWriter);
         }
     }
 
+    /**
+     * Обработка приватного сообщения
+     * для вызова обработки необходим патерн @name
+     * @param massage сообщение
+     * @return
+     */
     private String privateMassage(String massage){
         String temp = massage.substring(massage.indexOf("@")+1);
         String[] destination = temp.split(" ");
@@ -112,7 +117,6 @@ public class ClientManager implements Runnable {
         clients.stream()
                 .filter(clientManager -> clientManager.name.equals(src[0]))
                 .forEach(clientManager -> srcClient = clientManager);
-        privateMassageStatus = true;
         if (clients.stream().anyMatch(clientManager -> clientManager.name.equals(destination[0]))){
             clients.stream()
                     .filter(clientManager -> clientManager.name.equals(destination[0]))
@@ -134,13 +138,14 @@ public class ClientManager implements Runnable {
         while (!socket.isClosed()) {
             try {
                 // Чтение данных
-                privateMassageStatus = false;
                 massageFromClient = bufferedReader.readLine();
                 if (massageFromClient.contains(": @")){
                     massageFromClient = privateMassage(massageFromClient);
+                    unicastMessage(massageFromClient);
+                }else {
+                    // Отправка данных всем слушателям
+                    broadcastMessage(massageFromClient);
                 }
-                // Отправка данных всем слушателям
-                broadcastMessage(massageFromClient, privateMassageStatus);
             }
             catch (Exception e){
                 closeEverything(socket, bufferedReader, bufferedWriter);
